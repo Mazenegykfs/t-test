@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>T-test Web App - Dr Mazen Badawy</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jstat/1.9.4/jstat.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    body { padding: 20px; }
+    canvas { max-width: 100%; }
+    .table-container, .chart-container { margin-top: 20px; }
+    .results-section { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 20px; }
+    .table-container, .chart-container { flex: 1 1 48%; }
+    table { font-size: 0.9rem; }
+    th, td { text-align: center; vertical-align: middle; }
+  </style>
+</head>
+<body>
+<div class="container">
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h2 class="mb-0">T-test Web App - Dr Mazen Badawy</h2>
+  <img src="00.png" alt="Logo" style="height: 90px;">
+</div>
+
+  <div class="row mb-3">
+    <div class="col-md-3">
+      <label for="testType">Test Type:</label>
+      <select id="testType" class="form-select">
+        <option value="independent">Independent</option>
+        <option value="paired">Paired</option>
+      </select>
+    </div>
+    <div class="col-md-3">
+      <label for="language">Language:</label>
+      <select id="language" class="form-select">
+        <option value="English">English</option>
+        <option value="Arabic">Arabic</option>
+      </select>
+    </div>
+    <div class="col-md-3">
+      <label>Experimental/Posttest Excel:</label>
+      <input type="file" id="expFile" accept=".xlsx" class="form-control"/>
+    </div>
+    <div class="col-md-3">
+      <label>Control/Pretest Excel:</label>
+      <input type="file" id="conFile" accept=".xlsx" class="form-control"/>
+    </div>
+  </div>
+
+  <button class="btn btn-primary" onclick="runTest()">Run T-test</button>
+
+  <div class="results-section">
+    <div class="table-container">
+      <h4>Results Table</h4>
+      <div class="table-responsive">
+        <table class="table table-bordered" id="resultsTable"></table>
+      </div>
+      <button class="btn btn-success mt-2" onclick="exportResults()">Download Results as Excel</button>
+    </div>
+    <div class="chart-container">
+      <h4>Means Comparison Chart</h4>
+      <canvas id="chartCanvas"></canvas>
+    </div>
+  </div>
+</div>
+
+<script>
+function runTest() {
+  const expInput = document.getElementById('expFile').files[0];
+  const conInput = document.getElementById('conFile').files[0];
+  const testType = document.getElementById('testType').value;
+  const lang = document.getElementById('language').value;
+
+  if (!expInput || !conInput) return alert("Please select both files.");
+
+  Promise.all([
+    parseExcelFileWithHeaders(expInput),
+    parseExcelFileWithHeaders(conInput)
+  ]).then(([expData, conData]) => {
+    const expHeaders = expData.headers;
+    const conHeaders = conData.headers;
+
+    const headersMatch = expHeaders.length === conHeaders.length &&
+      expHeaders.every((val, i) => val === conHeaders[i]);
+
+    if (!headersMatch) {
+      alert("The two Excel files must have the same headers (variable names). Please check your files.");
+      return;
+    }
+
+    const expRows = expData.rows;
+    const conRows = conData.rows;
+
+    const results = [], labels = [], meansExp = [], meansCon = [];
+
+    for (let i = 0; i < expHeaders.length; i++) {
+      const expCol = expRows.map(row => parseFloat(row[i])).filter(x => !isNaN(x));
+      const conCol = conRows.map(row => parseFloat(row[i])).filter(x => !isNaN(x));
+
+      const meanExp = average(expCol), meanCon = average(conCol);
+      const stdExp = stdDev(expCol), stdCon = stdDev(conCol);
+      const skillLabel = lang === "Arabic" ? expHeaders[i] || `متغير ${i + 1}` : expHeaders[i] || `Variable ${i + 1}`;
+
+      let t, p, df, d;
+      if (testType === "independent") {
+        const n1 = expCol.length, n2 = conCol.length;
+        df = n1 + n2 - 2;
+        const sPooled = Math.sqrt(((n1 - 1) * stdExp ** 2 + (n2 - 1) * stdCon ** 2) / df);
+        t = ((meanExp - meanCon) / (sPooled * Math.sqrt(1/n1 + 1/n2))).toFixed(2);
+        p = (2 * (1 - jStat.studentt.cdf(Math.abs(t), df))).toFixed(3);
+        d = ((meanExp - meanCon) / sPooled).toFixed(2);
+      } else {
+        const diffs = expCol.map((val, idx) => val - conCol[idx]);
+        const meanDiff = average(diffs);
+        const sdDiff = stdDev(diffs);
+        t = (meanDiff / (sdDiff / Math.sqrt(diffs.length))).toFixed(2);
+        df = diffs.length - 1;
+        p = (2 * (1 - jStat.studentt.cdf(Math.abs(t), df))).toFixed(3);
+        d = (meanDiff / sdDiff).toFixed(2);
+      }
+
+      const sig = lang === "Arabic" ? (p < 0.05 ? "دال" : "غير دال") : (p < 0.05 ? "Significant" : "Not Sig.");
+      const dLabel = lang === "Arabic" ? (Math.abs(d) < 0.2 ? "صغير" : Math.abs(d) < 0.5 ? "متوسط" : "كبير") : (Math.abs(d) < 0.2 ? "Small" : Math.abs(d) < 0.5 ? "Medium" : "Large");
+
+      results.push({
+        index: i + 1,
+        label: skillLabel,
+        post: [meanExp.toFixed(2), expCol.length, stdExp.toFixed(2)],
+        pre: [meanCon.toFixed(2), conCol.length, stdCon.toFixed(2)],
+        t, df, p, d, dLabel, sig
+      });
+
+      labels.push(skillLabel);
+      meansExp.push(meanExp);
+      meansCon.push(meanCon);
+    }
+
+    renderTable(results, lang, testType);
+    renderChart(labels, meansExp, meansCon);
+  });
+}
+
+function parseExcelFileWithHeaders(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const data = new Uint8Array(e.target.result);
+      const workbook = XLSX.read(data, { type: 'array' });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const json = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+      const headers = json[0].map(header => header?.toString().trim());
+      const rows = json.slice(1).filter(row => row.length > 0);
+      resolve({ headers, rows });
+    };
+    reader.onerror = reject;
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function average(arr) {
+  return arr.reduce((a, b) => a + b, 0) / arr.length;
+}
+
+function stdDev(arr) {
+  const avg = average(arr);
+  const squareDiffs = arr.map(x => Math.pow(x - avg, 2));
+  return Math.sqrt(squareDiffs.reduce((a, b) => a + b) / (arr.length - 1));
+}
+
+function renderTable(data, lang, testType) {
+  const table = document.getElementById('resultsTable');
+  table.innerHTML = "";
+
+  let measurementHeader;
+  if (lang === "Arabic") {
+    measurementHeader = testType === "independent" ? "تجريبية / ضابطة" : "بعدي / قبلي";
+  } else {
+    measurementHeader = testType === "independent" ? "Experimental / Control" : "Post / Pre";
+  }
+
+  const headers = lang === "Arabic"
+    ? ["م", "المتغيرات", "القياس", "المتوسط", "ن", "الانحراف المعياري", "ت", "د.ح", "الدلالة", "d كوهين", "حجم الأثر"]
+    : ["#", "Variable", "Measurement", "Mean", "n", "Std. Deviation", "t", "df", "Sig **", "Cohen's d", "Effect Size"];
+
+  headers[2] = measurementHeader;
+
+  const headerRow = table.insertRow();
+  headers.forEach(h => {
+    const th = document.createElement('th');
+    th.textContent = h;
+    headerRow.appendChild(th);
+  });
+
+  data.forEach((item, i) => {
+    const row1 = table.insertRow();
+    row1.insertCell().textContent = item.index;
+    row1.insertCell().textContent = item.label;
+    row1.insertCell().textContent = lang === "Arabic" ? "بعدي" : "Post";
+    item.post.forEach(val => row1.insertCell().textContent = val);
+    row1.insertCell().textContent = item.t;
+    row1.insertCell().textContent = item.df;
+    row1.insertCell().textContent = item.p;
+    row1.insertCell().textContent = item.d;
+    row1.insertCell().textContent = item.dLabel;
+
+    const row2 = table.insertRow();
+    row2.insertCell();
+    row2.insertCell();
+    row2.insertCell().textContent = lang === "Arabic" ? "قبلي" : "Pre";
+    item.pre.forEach(val => row2.insertCell().textContent = val);
+    row2.insertCell();
+    row2.insertCell();
+    row2.insertCell();
+    row2.insertCell();
+    row2.insertCell().textContent = item.sig;
+  });
+}
+
+function renderChart(labels, exp, con) {
+  const ctx = document.getElementById('chartCanvas').getContext('2d');
+  if (window.barChart) window.barChart.destroy();
+  window.barChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Post/Experimental', backgroundColor: 'royalblue', data: exp },
+        { label: 'Pre/Control', backgroundColor: 'seagreen', data: con }
+      ]
+    },
+    options: {
+      responsive: true,
+      scales: {
+        y: { beginAtZero: true }
+      }
+    }
+  });
+}
+
+function exportResults() {
+  const table = document.getElementById('resultsTable');
+  const rows = Array.from(table.rows).map(row =>
+    Array.from(row.cells).map(cell => cell.textContent)
+  );
+
+  const worksheet = XLSX.utils.aoa_to_sheet(rows);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "T-Test Results");
+
+  XLSX.writeFile(workbook, "T-Test_Results.xlsx");
+}
+</script>
+</body>
+</html>
