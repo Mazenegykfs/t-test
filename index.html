@@ -16,13 +16,23 @@
     .table-container, .chart-container { flex: 1 1 48%; }
     table { font-size: 0.9rem; }
     th, td { text-align: center; vertical-align: middle; }
+    .top-bar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+    }
   </style>
 </head>
 <body>
 <div class="container">
-<div class="d-flex justify-content-between align-items-center mb-4">
-  <h2 class="mb-0">T-test Web App - Dr Mazen Badawy</h2>
-  <img src="00.png" alt="Logo" style="height: 90px;">
+<div class="top-bar">
+    <button class="btn btn-light btn-sm" onclick="downloadTemplate()">Download Template</button>
+    <div class="d-flex justify-content-between align-items-center flex-grow-1 ms-3">
+        <h2 class="mb-0">T-test Web App - Dr Mazen Badawy</h2>
+        <!-- Placeholder for the logo image. The original image '00.png' is not available. -->
+        <img src="https://placehold.co/90x90/aabbcc/ffffff?text=Logo" alt="Logo" style="height: 90px;">
+    </div>
 </div>
 
   <div class="row mb-3">
@@ -58,7 +68,10 @@
       <div class="table-responsive">
         <table class="table table-bordered" id="resultsTable"></table>
       </div>
-      <button class="btn btn-success mt-2" onclick="exportResults()">Download Results as Excel</button>
+      <div class="d-flex gap-2 mt-2">
+        <button class="btn btn-success btn-sm" onclick="copyTable()">Copy Table</button>
+        <button class="btn btn-success mt-2" onclick="exportResults()">Download Results as Excel</button>
+      </div>
     </div>
     <div class="chart-container">
       <h4>Means Comparison Chart</h4>
@@ -68,13 +81,30 @@
 </div>
 
 <script>
+// Function to display custom alert messages instead of browser's alert()
+function showAlert(message) {
+    const alertDiv = document.createElement('div');
+    alertDiv.className = 'alert alert-danger alert-dismissible fade show mt-3';
+    alertDiv.setAttribute('role', 'alert');
+    alertDiv.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    `;
+    document.querySelector('.container').prepend(alertDiv);
+    setTimeout(() => {
+        if (alertDiv.parentNode) {
+            alertDiv.parentNode.removeChild(alertDiv);
+        }
+    }, 5000); // Remove alert after 5 seconds
+}
+
 function runTest() {
   const expInput = document.getElementById('expFile').files[0];
   const conInput = document.getElementById('conFile').files[0];
   const testType = document.getElementById('testType').value;
   const lang = document.getElementById('language').value;
 
-  if (!expInput || !conInput) return alert("Please select both files.");
+  if (!expInput || !conInput) return showAlert("Please select both files.");
 
   Promise.all([
     parseExcelFileWithHeaders(expInput),
@@ -87,7 +117,7 @@ function runTest() {
       expHeaders.every((val, i) => val === conHeaders[i]);
 
     if (!headersMatch) {
-      alert("The two Excel files must have the same headers (variable names). Please check your files.");
+      showAlert("The two Excel files must have the same headers (variable names). Please check your files.");
       return;
     }
 
@@ -100,6 +130,12 @@ function runTest() {
       const expCol = expRows.map(row => parseFloat(row[i])).filter(x => !isNaN(x));
       const conCol = conRows.map(row => parseFloat(row[i])).filter(x => !isNaN(x));
 
+      // Ensure both columns have data before proceeding
+      if (expCol.length === 0 || conCol.length === 0) {
+          console.warn(`Skipping variable ${expHeaders[i]} due to missing or invalid data.`);
+          continue;
+      }
+
       const meanExp = average(expCol), meanCon = average(conCol);
       const stdExp = stdDev(expCol), stdCon = stdDev(conCol);
       const skillLabel = lang === "Arabic" ? expHeaders[i] || `متغير ${i + 1}` : expHeaders[i] || `Variable ${i + 1}`;
@@ -108,18 +144,43 @@ function runTest() {
       if (testType === "independent") {
         const n1 = expCol.length, n2 = conCol.length;
         df = n1 + n2 - 2;
+        // Handle case where df is 0 or less to prevent division by zero
+        if (df <= 0) {
+            console.warn(`Skipping independent t-test for ${skillLabel}: Insufficient data points for degrees of freedom.`);
+            continue;
+        }
         const sPooled = Math.sqrt(((n1 - 1) * stdExp ** 2 + (n2 - 1) * stdCon ** 2) / df);
-        t = ((meanExp - meanCon) / (sPooled * Math.sqrt(1/n1 + 1/n2))).toFixed(2);
-        p = (2 * (1 - jStat.studentt.cdf(Math.abs(t), df))).toFixed(3);
-        d = ((meanExp - meanCon) / sPooled).toFixed(2);
-      } else {
+        // Handle case where sPooled is 0 to prevent division by zero
+        if (sPooled === 0) {
+            t = (meanExp - meanCon === 0) ? 0 : Infinity; // If means are same, t is 0, else infinite
+        } else {
+            t = ((meanExp - meanCon) / (sPooled * Math.sqrt(1/n1 + 1/n2)));
+        }
+        p = (2 * (1 - jStat.studentt.cdf(Math.abs(t), df)));
+        d = ((meanExp - meanCon) / sPooled);
+      } else { // Paired t-test
+        // Ensure arrays are of the same length for paired test
+        if (expCol.length !== conCol.length) {
+            showAlert(`For paired t-test, the number of data points for ${skillLabel} in both files must be the same.`);
+            continue;
+        }
         const diffs = expCol.map((val, idx) => val - conCol[idx]);
         const meanDiff = average(diffs);
         const sdDiff = stdDev(diffs);
-        t = (meanDiff / (sdDiff / Math.sqrt(diffs.length))).toFixed(2);
         df = diffs.length - 1;
-        p = (2 * (1 - jStat.studentt.cdf(Math.abs(t), df))).toFixed(3);
-        d = (meanDiff / sdDiff).toFixed(2);
+        // Handle case where df is 0 or less to prevent division by zero
+        if (df <= 0) {
+            console.warn(`Skipping paired t-test for ${skillLabel}: Insufficient data points for degrees of freedom.`);
+            continue;
+        }
+        // Handle case where sdDiff is 0 to prevent division by zero
+        if (sdDiff === 0) {
+            t = (meanDiff === 0) ? 0 : Infinity; // If mean difference is 0, t is 0, else infinite
+        } else {
+            t = (meanDiff / (sdDiff / Math.sqrt(diffs.length)));
+        }
+        p = (2 * (1 - jStat.studentt.cdf(Math.abs(t), df)));
+        d = (meanDiff / sdDiff);
       }
 
       const sig = lang === "Arabic" ? (p < 0.05 ? "دال" : "غير دال") : (p < 0.05 ? "Significant" : "Not Sig.");
@@ -130,7 +191,11 @@ function runTest() {
         label: skillLabel,
         post: [meanExp.toFixed(2), expCol.length, stdExp.toFixed(2)],
         pre: [meanCon.toFixed(2), conCol.length, stdCon.toFixed(2)],
-        t, df, p, d, dLabel, sig
+        t: t.toFixed(2), // Format t-value
+        df,
+        p: p.toFixed(3), // Format p-value
+        d: d.toFixed(2), // Format Cohen's d
+        dLabel, sig
       });
 
       labels.push(skillLabel);
@@ -140,6 +205,9 @@ function runTest() {
 
     renderTable(results, lang, testType);
     renderChart(labels, meansExp, meansCon);
+  }).catch(error => {
+      showAlert("Error processing files: " + error.message);
+      console.error("Error:", error);
   });
 }
 
@@ -147,14 +215,23 @@ function parseExcelFileWithHeaders(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = function(e) {
-      const data = new Uint8Array(e.target.result);
-      const workbook = XLSX.read(data, { type: 'array' });
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const json = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const json = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
-      const headers = json[0].map(header => header?.toString().trim());
-      const rows = json.slice(1).filter(row => row.length > 0);
-      resolve({ headers, rows });
+        if (json.length === 0) {
+            reject(new Error("Excel file is empty or has no data."));
+            return;
+        }
+
+        const headers = json[0].map(header => header?.toString().trim());
+        const rows = json.slice(1).filter(row => row.length > 0);
+        resolve({ headers, rows });
+      } catch (error) {
+        reject(new Error("Failed to parse Excel file. Please ensure it's a valid .xlsx file. " + error.message));
+      }
     };
     reader.onerror = reject;
     reader.readAsArrayBuffer(file);
@@ -162,10 +239,12 @@ function parseExcelFileWithHeaders(file) {
 }
 
 function average(arr) {
+  if (arr.length === 0) return 0; // Handle empty array
   return arr.reduce((a, b) => a + b, 0) / arr.length;
 }
 
 function stdDev(arr) {
+  if (arr.length <= 1) return 0; // Standard deviation requires at least 2 data points
   const avg = average(arr);
   const squareDiffs = arr.map(x => Math.pow(x - avg, 2));
   return Math.sqrt(squareDiffs.reduce((a, b) => a + b) / (arr.length - 1));
@@ -186,6 +265,7 @@ function renderTable(data, lang, testType) {
     ? ["م", "المتغيرات", "القياس", "المتوسط", "ن", "الانحراف المعياري", "ت", "د.ح", "الدلالة", "d كوهين", "حجم الأثر"]
     : ["#", "Variable", "Measurement", "Mean", "n", "Std. Deviation", "t", "df", "Sig **", "Cohen's d", "Effect Size"];
 
+  // Update the Measurement header based on test type
   headers[2] = measurementHeader;
 
   const headerRow = table.insertRow();
@@ -208,15 +288,15 @@ function renderTable(data, lang, testType) {
     row1.insertCell().textContent = item.dLabel;
 
     const row2 = table.insertRow();
-    row2.insertCell();
-    row2.insertCell();
+    row2.insertCell(); // Empty cell for index
+    row2.insertCell(); // Empty cell for label
     row2.insertCell().textContent = lang === "Arabic" ? "قبلي" : "Pre";
     item.pre.forEach(val => row2.insertCell().textContent = val);
-    row2.insertCell();
-    row2.insertCell();
-    row2.insertCell();
-    row2.insertCell();
-    row2.insertCell().textContent = item.sig;
+    row2.insertCell(); // Empty cell for t
+    row2.insertCell(); // Empty cell for df
+    row2.insertCell(); // Empty cell for p
+    row2.insertCell(); // Empty cell for d
+    row2.insertCell().textContent = item.sig; // Only sig for the second row
   });
 }
 
@@ -253,6 +333,57 @@ function exportResults() {
 
   XLSX.writeFile(workbook, "T-Test_Results.xlsx");
 }
+
+function downloadTemplate() {
+    const ws_data = [
+        ["Experimental_Variable_1", "Experimental_Variable_2"],
+        [10, 12],
+        [15, 11],
+        [8, 14],
+        [12, 10]
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(ws_data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Template");
+    XLSX.writeFile(wb, "t_test_template.xlsx");
+}
+
+function copyTable() {
+    const table = document.getElementById('resultsTable');
+    let textToCopy = '';
+
+    // Extract headers
+    const headerRow = table.querySelector('thead tr') || table.querySelector('tr');
+    if (headerRow) {
+        Array.from(headerRow.cells).forEach(cell => {
+            textToCopy += cell.textContent + '\t';
+        });
+        textToCopy += '\n';
+    }
+
+    // Extract table data
+    const rows = table.querySelectorAll('tbody tr') || table.querySelectorAll('tr');
+    rows.forEach(row => {
+        Array.from(row.cells).forEach(cell => {
+            textToCopy += cell.textContent + '\t';
+        });
+        textToCopy += '\n';
+    });
+
+    const tempTextArea = document.createElement('textarea');
+    tempTextArea.value = textToCopy.trim();
+    document.body.appendChild(tempTextArea);
+    tempTextArea.select();
+    try {
+        document.execCommand('copy');
+        showAlert("Table copied to clipboard!");
+    } catch (err) {
+        console.error('Failed to copy text: ', err);
+        showAlert("Failed to copy table. Please try again.");
+    }
+    document.body.removeChild(tempTextArea);
+}
 </script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
