@@ -25,60 +25,60 @@
   </style>
 </head>
 <body>
-<div class="container">
-<div class="top-bar">
-    <button class="btn btn-light btn-sm" onclick="downloadTemplate()">Download Template</button>
-    <div class="d-flex justify-content-between align-items-center flex-grow-1 ms-3">
-        <h2 class="mb-0">t-test Web App - Dr Mazen Badawy</h2>
-        <!-- Placeholder for the logo image. The original image '00.png' is not available. -->
-        <img src="00.png" alt="Logo" style="height: 90px;">
-    </div>
-</div>
-
-  <div class="row mb-3">
-    <div class="col-md-3">
-      <label for="testType">Test Type:</label>
-      <select id="testType" class="form-select">
-        <option value="independent">Independent</option>
-        <option value="paired">Paired</option>
-      </select>
-    </div>
-    <div class="col-md-3">
-      <label for="language">Language:</label>
-      <select id="language" class="form-select">
-        <option value="English">English</option>
-        <option value="Arabic">Arabic</option>
-      </select>
-    </div>
-    <div class="col-md-3">
-      <label>Experimental/Posttest Excel:</label>
-      <input type="file" id="expFile" accept=".xlsx" class="form-control"/>
-    </div>
-    <div class="col-md-3">
-      <label>Control/Pretest Excel:</label>
-      <input type="file" id="conFile" accept=".xlsx" class="form-control"/>
-    </div>
-  </div>
-
-  <button class="btn btn-primary" onclick="runTest()">Run t-test</button>
-
-  <div class="results-section">
-    <div class="table-container">
-      <h4>Results Table</h4>
-      <div class="table-responsive">
-        <table class="table table-bordered" id="resultsTable"></table>
-      </div>
-      <div class="d-flex gap-2 mt-2">
-        <button class="btn btn-success btn-sm" onclick="copyTable()">Copy Table</button>
-        <button class="btn btn-success mt-2" onclick="exportResults()">Download Results as Excel</button>
+  <div class="container">
+    <div class="top-bar">
+      <button class="btn btn-light btn-sm" onclick="downloadTemplate()">Download Template</button>
+      <div class="d-flex justify-content-between align-items-center flex-grow-1 ms-3">
+          <h2 class="mb-0">t-test Web App - Dr Mazen Badawy</h2>
+          <!-- Placeholder for the logo image. The original image '00.png' is not available. -->
+          <img src="00.png" alt="Logo" style="height: 90px;">
       </div>
     </div>
-    <div class="chart-container">
-      <h4>Means Comparison Chart</h4>
-      <canvas id="chartCanvas"></canvas>
+    
+    <div class="row mb-3">
+      <div class="col-md-3">
+        <label for="testType">Test Type:</label>
+        <select id="testType" class="form-select">
+          <option value="independent">Independent</option>
+          <option value="paired">Paired</option>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label for="language">Language:</label>
+        <select id="language" class="form-select">
+          <option value="English">English</option>
+          <option value="Arabic">Arabic</option>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label>Experimental/Posttest Excel:</label>
+        <input type="file" id="expFile" accept=".xlsx" class="form-control"/>
+      </div>
+      <div class="col-md-3">
+        <label>Control/Pretest Excel:</label>
+        <input type="file" id="conFile" accept=".xlsx" class="form-control"/>
+      </div>
+    </div>
+    
+    <button class="btn btn-primary" onclick="runTest()">Run t-test</button>
+    
+    <div class="results-section">
+      <div class="table-container">
+        <h4>Results Table</h4>
+        <div class="table-responsive">
+          <table class="table table-bordered" id="resultsTable"></table>
+        </div>
+        <div class="d-flex gap-2 mt-2">
+          <button class="btn btn-success btn-sm" onclick="copyTable()">Copy Table</button>
+          <button class="btn btn-success mt-2" onclick="exportResults()">Download Results as Excel</button>
+        </div>
+      </div>
+      <div class="chart-container">
+        <h4>Means Comparison Chart</h4>
+        <canvas id="chartCanvas"></canvas>
+      </div>
     </div>
   </div>
-</div>
 
 <script>
 // Function to display custom alert messages instead of browser's alert()
@@ -123,7 +123,6 @@ function runTest() {
 
     const expRows = expData.rows;
     const conRows = conData.rows;
-
     const results = [], labels = [], meansExp = [], meansCon = [];
 
     for (let i = 0; i < expHeaders.length; i++) {
@@ -183,8 +182,16 @@ function runTest() {
         d = (meanDiff / sdDiff);
       }
 
-      const sig = lang === "Arabic" ? (p < 0.05 ? "دال" : "غير دال") : (p < 0.05 ? "Significant" : "Not Sig.");
+      const sig = lang === "Arabic" ? (p <= 0.05 ? "دال" : "غير دال") : (p <= 0.05 ? "Significant" : "Not Sig.");
       const dLabel = lang === "Arabic" ? (Math.abs(d) < 0.2 ? "صغير" : Math.abs(d) < 0.5 ? "متوسط" : "كبير") : (Math.abs(d) < 0.2 ? "Small" : Math.abs(d) < 0.5 ? "Medium" : "Large");
+
+      // Add asterisks to p-value based on significance level
+      let pFormatted = p.toFixed(3);
+      if (p <= 0.01) {
+          pFormatted += "**";
+      } else if (p <= 0.05) {
+          pFormatted += "*";
+      }
 
       results.push({
         index: i + 1,
@@ -193,7 +200,7 @@ function runTest() {
         pre: [meanCon.toFixed(2), conCol.length, stdCon.toFixed(2)],
         t: t.toFixed(2), // Format t-value
         df,
-        p: p.toFixed(3), // Format p-value
+        p: pFormatted, // Format p-value with asterisks
         d: d.toFixed(2), // Format Cohen's d
         dLabel, sig
       });
@@ -262,8 +269,8 @@ function renderTable(data, lang, testType) {
   }
 
   const headers = lang === "Arabic"
-    ? ["م", "المتغيرات", "القياس", "المتوسط", "ن", "الانحراف المعياري", "ت", "د.ح", "الدلالة", "d كوهين", "حجم الأثر"]
-    : ["#", "Variable", "Measurement", "Mean", "n", "Std. Deviation", "t", "df", "Sig **", "Cohen's d", "Effect Size"];
+    ? ["م", "المتغيرات", "القياس", "المتوسط", "ن", "الانحراف المعياري", "ت", "د.ح", "الدلالة", "القرار", "d كوهين", "حجم الأثر"]
+    : ["#", "Variable", "Measurement", "Mean", "n", "Std. Deviation", "t", "df", "Sig **", "Significance", "Cohen's d", "Effect Size"];
 
   // Update the Measurement header based on test type
   headers[2] = measurementHeader;
@@ -275,29 +282,84 @@ function renderTable(data, lang, testType) {
     headerRow.appendChild(th);
   });
 
+  let label1, label2;
+  if (testType === "independent") {
+    label1 = lang === "Arabic" ? "تجريبية" : "Experimental";
+    label2 = lang === "Arabic" ? "ضابطة" : "Control";
+  } else {
+    label1 = lang === "Arabic" ? "بعدي" : "Post";
+    label2 = lang === "Arabic" ? "قبلي" : "Pre";
+  }
+
   data.forEach((item, i) => {
     const row1 = table.insertRow();
-    row1.insertCell().textContent = item.index;
-    row1.insertCell().textContent = item.label;
-    row1.insertCell().textContent = lang === "Arabic" ? "بعدي" : "Post";
+    
+    let cell = row1.insertCell();
+    cell.textContent = item.index;
+    cell.rowSpan = 2;
+    cell.style.verticalAlign = 'middle';
+
+    cell = row1.insertCell();
+    cell.textContent = item.label;
+    cell.rowSpan = 2;
+    cell.style.verticalAlign = 'middle';
+
+    row1.insertCell().textContent = label1;
     item.post.forEach(val => row1.insertCell().textContent = val);
-    row1.insertCell().textContent = item.t;
-    row1.insertCell().textContent = item.df;
-    row1.insertCell().textContent = item.p;
-    row1.insertCell().textContent = item.d;
-    row1.insertCell().textContent = item.dLabel;
+    
+    cell = row1.insertCell();
+    cell.textContent = item.t;
+    cell.rowSpan = 2;
+    cell.style.verticalAlign = 'middle';
+    
+    cell = row1.insertCell();
+    cell.textContent = item.df;
+    cell.rowSpan = 2;
+    cell.style.verticalAlign = 'middle';
+    
+    cell = row1.insertCell();
+    cell.textContent = item.p;
+    cell.rowSpan = 2;
+    cell.style.verticalAlign = 'middle';
+    
+    // NEW COLUMN: Significance label (Significant / Not Sig.)
+    cell = row1.insertCell();
+    cell.textContent = item.sig;
+    cell.rowSpan = 2;
+    cell.style.verticalAlign = 'middle';
+    
+    cell = row1.insertCell();
+    cell.textContent = item.d;
+    cell.rowSpan = 2;
+    cell.style.verticalAlign = 'middle';
+    
+    // Effect Size label (Merged vertically for a cleaner table)
+    cell = row1.insertCell();
+    cell.textContent = item.dLabel;
+    cell.rowSpan = 2;
+    cell.style.verticalAlign = 'middle';
 
     const row2 = table.insertRow();
-    row2.insertCell(); // Empty cell for index
-    row2.insertCell(); // Empty cell for label
-    row2.insertCell().textContent = lang === "Arabic" ? "قبلي" : "Pre";
+    row2.insertCell().textContent = label2;
     item.pre.forEach(val => row2.insertCell().textContent = val);
-    row2.insertCell(); // Empty cell for t
-    row2.insertCell(); // Empty cell for df
-    row2.insertCell(); // Empty cell for p
-    row2.insertCell(); // Empty cell for d
-    row2.insertCell().textContent = item.sig; // Only sig for the second row
   });
+
+  // Add footnote for significance asterisks
+  const tfoot = table.createTFoot();
+  
+  const footRow1 = tfoot.insertRow();
+  const footCell1 = footRow1.insertCell();
+  footCell1.colSpan = headers.length;
+  footCell1.style.textAlign = lang === "Arabic" ? "right" : "left";
+  footCell1.style.borderBottom = "none";
+  footCell1.textContent = lang === "Arabic" ? "** دالة عند مستوى (0.01)" : "** significant at the (0.01)";
+
+  const footRow2 = tfoot.insertRow();
+  const footCell2 = footRow2.insertCell();
+  footCell2.colSpan = headers.length;
+  footCell2.style.textAlign = lang === "Arabic" ? "right" : "left";
+  footCell2.style.borderTop = "none";
+  footCell2.textContent = lang === "Arabic" ? "* دالة عند مستوى (0.05)" : "* significant at the (0.05)";
 }
 
 function renderChart(labels, exp, con) {
@@ -323,14 +385,7 @@ function renderChart(labels, exp, con) {
 
 function exportResults() {
   const table = document.getElementById('resultsTable');
-  const rows = Array.from(table.rows).map(row =>
-    Array.from(row.cells).map(cell => cell.textContent)
-  );
-
-  const worksheet = XLSX.utils.aoa_to_sheet(rows);
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, "T-Test Results");
-
+  const workbook = XLSX.utils.table_to_book(table, {sheet: "T-Test Results"});
   XLSX.writeFile(workbook, "T-Test_Results.xlsx");
 }
 
@@ -352,23 +407,32 @@ function copyTable() {
     const table = document.getElementById('resultsTable');
     let textToCopy = '';
 
-    // Extract headers
-    const headerRow = table.querySelector('thead tr') || table.querySelector('tr');
-    if (headerRow) {
-        Array.from(headerRow.cells).forEach(cell => {
-            textToCopy += cell.textContent + '\t';
-        });
-        textToCopy += '\n';
-    }
+    const rows = Array.from(table.rows);
+    const matrix = Array.from({ length: rows.length }, () => []);
 
-    // Extract table data
-    const rows = table.querySelectorAll('tbody tr') || table.querySelectorAll('tr');
-    rows.forEach(row => {
-        Array.from(row.cells).forEach(cell => {
-            textToCopy += cell.textContent + '\t';
-        });
-        textToCopy += '\n';
-    });
+    for (let r = 0; r < rows.length; r++) {
+        const cells = rows[r].cells;
+        let cIdx = 0;
+        for (let c = 0; c < cells.length; c++) {
+            while (matrix[r][cIdx] !== undefined) cIdx++;
+            
+            const cell = cells[c];
+            const text = cell.textContent;
+            const rowSpan = cell.rowSpan || 1;
+            const colSpan = cell.colSpan || 1;
+            
+            for (let rs = 0; rs < rowSpan; rs++) {
+                for (let cs = 0; cs < colSpan; cs++) {
+                    if (matrix[r + rs]) {
+                        matrix[r + rs][cIdx + cs] = (rs === 0 && cs === 0) ? text : '';
+                    }
+                }
+            }
+            cIdx += colSpan;
+        }
+    }
+    
+    textToCopy = matrix.map(row => row.join('\t')).join('\n');
 
     const tempTextArea = document.createElement('textarea');
     tempTextArea.value = textToCopy.trim();
@@ -387,5 +451,3 @@ function copyTable() {
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
-
-
